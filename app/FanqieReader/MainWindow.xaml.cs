@@ -294,7 +294,17 @@ public partial class MainWindow : Window
 
         core.WebMessageReceived += OnWebMessageReceived;
         core.NavigationStarting += OnNavigationStarting;
-        core.NewWindowRequested += (_, args) => args.Handled = true;
+        // target="_blank" 的链接不会走 NavigationStarting，只发 NewWindowRequested：
+        // 同样交给系统浏览器，绝不在阅读器里开新窗口。
+        core.NewWindowRequested += (_, args) =>
+        {
+            args.Handled = true;
+            if (Uri.TryCreate(args.Uri, UriKind.Absolute, out var external)
+                && (external.Scheme == Uri.UriSchemeHttp || external.Scheme == Uri.UriSchemeHttps))
+            {
+                OpenInSystemBrowser(external.AbsoluteUri);
+            }
+        };
         core.PermissionRequested += (_, args) => args.State = CoreWebView2PermissionState.Deny;
         core.DownloadStarting += (_, args) => args.Cancel = true;
         core.ProcessFailed += (_, args) =>

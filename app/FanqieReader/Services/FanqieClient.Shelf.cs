@@ -110,6 +110,8 @@ public sealed partial class FanqieClient
             if (pair.Value.Order > 0) entry.Order = pair.Value.Order;
         }
 
+        await EnrichReadOrderAsync(entries, diag);
+
         var result = entries.Values.Select(e => e.ToSummary()).ToList();
         diag.Add(new
         {
@@ -231,8 +233,10 @@ public sealed partial class FanqieClient
         public string LastChapterItemId = "";
         public string ProgressItemId = "";
         public int SerialCount;
-        public int Order;              // 0 = unknown
+        public int Order;              // 0 = unknown（multidetail 的 order 只是第一章序号，别当进度用）
         public int CreationStatus = -1; // -1 = unknown, 0 = 完结, 1 = 连载
+        public int ReadOrder;          // 读到第几章（靠 progress 的 item_id 反查目录得到）
+        public int ReadTotal;          // 目录总章数
 
         public void MergeFrom(ShelfEntry other)
         {
@@ -249,15 +253,14 @@ public sealed partial class FanqieClient
         public BookSummary ToSummary()
         {
             var finished = CreationStatus == 0;
-            var read = DescribeRead(Order, SerialCount, CreationStatus);
-            if (read.Length == 0 && ProgressItemId.Length > 0) read = "继续上次阅读";
+            var read = DescribeRead(ReadOrder, ReadTotal, CreationStatus);
             return new BookSummary
             {
                 BookId = BookId,
                 Title = Title.Length > 0 ? Title : "书籍 " + BookId,
                 Author = Author,
                 ChapterId = ProgressItemId,
-                StartOrder = Order > 0 ? Order : null,
+                StartOrder = ReadOrder > 0 ? ReadOrder : null,
                 SerialCount = SerialCount,
                 IsFinished = finished,
                 StatusKnown = CreationStatus >= 0,
@@ -311,13 +314,11 @@ public sealed partial class FanqieClient
         else sink[entry.BookId] = entry;
     }
 
-    private static string DescribeRead(int order, int serialCount, int creationStatus)
+    private static string DescribeRead(int readOrder, int total, int creationStatus)
     {
-        if (order <= 0) return "";
-        if (serialCount <= 0) return $"读到 {order} 章";
-        if (order <= 1) return "未读过";
-        if (order < serialCount) return $"读到 {order} 章";
-        return creationStatus == 0 ? "已读完" : "已读到最新章";
+        if (readOrder <= 0) return "";
+        if (total > 0 && readOrder >= total) return creationStatus == 0 ? "已读完" : "读到最新章";
+        return $"读到 {readOrder} 章";
     }
 
     // ------------------------------------------------------------------
@@ -400,6 +401,44 @@ public sealed partial class FanqieClient
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// 书架接口只给出"上次读的章节 id"，没有章号；这里对**确实有阅读记录**的书
+    /// 抓一次目录，把章节 id 换成"第 N 章"。没有记录的书就不显示进度，不编造。
+    /// </summary>
+    private async Task EnrichReadOrderAsync(Dictionary<string, ShelfEntry> entries, List<object> diag)
+    {
+        var targets = entries.Values
+            .Where(e => e.ProgressItemId.Length > 0)
+            .Take(12)
+            .ToList();
+        if (targets.Count == 0) return;
+
+        using var gate = new SemaphoreSlim(3);
+        var tasks = targets.Select(async entry =>
+        {
+            await gate.WaitAsync();
+            try
+            {
+                var catalog = await GetCatalogAsync(entry.BookId);
+                var index = catalog.Chapters.FindIndex(c => c.Id == entry.ProgressItemId);
+                if (index < 0) return;
+                entry.ReadOrder = index + 1;
+                entry.ReadTotal = catalog.Chapters.Count;
+            }
+            catch (Exception ex)
+            {
+                LogTrace($"read order {entry.BookId} failed: {ex.Message}");
+            }
+            finally
+            {
+                gate.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+        diag.Add(new { endpoint = "read-order", tried = targets.Count, resolved = targets.Count(e => e.ReadOrder > 0) });
     }
 
     /// <summary>有书缺作者时才继续问别的接口，避免重复请求。</summary>

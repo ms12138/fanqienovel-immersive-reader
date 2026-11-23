@@ -198,10 +198,16 @@ fanqienovel-immersive-reader/
 
 登录配置和日志都会放到指定目录，整个文件夹可以随身带走。
 
-**书架的作者 / 阅读进度不对**
+**书架为什么不显示作者**
 
-阅读器会把这一轮书架接口的原始应答写到 `%LOCALAPPDATA%\FanqieReader\logs\shelf-dump.json`。
-这类字段名随官方改版变化，遇到问题把这个文件连同日志一起发出来即可定位。
+番茄的书架接口（`bookshelf/info`、`bookshelf/multidetail`、`book/simple/info`）都**不返回作者**，
+官方网页版书架本身也不显示作者——不是阅读器漏读。所以书架只显示连载状态和阅读进度。
+
+**阅读进度怎么来的**
+
+`multidetail` 里的 `order` / `real_chapter_order` 是"第一章"的序号，不是阅读位置；
+真正的进度只在 `/api/reader/book/progress` 的 `item_id`（上次读的章节 id）里。
+阅读器对**确实有阅读记录**的书抓一次目录，把章节 id 换成"读到第 N 章"；没有记录的书不显示进度，不会写"未读过"。
 
 ## 已知限制
 

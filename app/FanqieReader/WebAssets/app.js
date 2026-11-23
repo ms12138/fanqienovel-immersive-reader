@@ -673,31 +673,29 @@
       const title = document.createElement('div');
       title.className = 'book-name';
       title.textContent = book.title || '未命名书籍';
+      // 番茄的书架接口不返回作者，官方网页书架本身也不显示，所以这里只放
+      // 连载状态和真实阅读进度；都没有就不占一行。
       const sub = document.createElement('div');
       sub.className = 'book-sub';
-      const author = document.createElement('span');
-      author.className = 'book-author';
-      author.textContent = book.author || '作者未知';
-      sub.appendChild(author);
       if (book.statusKnown !== false && book.statusText) {
-        const sep = document.createElement('span');
-        sep.className = 'sep';
-        sub.appendChild(sep);
         const badge = document.createElement('span');
         badge.className = 'book-badge' + (book.isFinished ? ' book-badge--finish' : '');
-        badge.textContent = book.isFinished ? '完结' : book.statusText;
+        badge.textContent = book.isFinished ? '完结' : '连载中';
         sub.appendChild(badge);
       }
       if (book.readText) {
-        const sep2 = document.createElement('span');
-        sep2.className = 'sep';
-        sub.appendChild(sep2);
+        if (sub.childElementCount > 0) {
+          const sep = document.createElement('span');
+          sep.className = 'sep';
+          sub.appendChild(sep);
+        }
         const read = document.createElement('span');
         read.className = 'book-read';
         read.textContent = book.readText;
         sub.appendChild(read);
       }
-      main.append(title, sub);
+      main.appendChild(title);
+      if (sub.childElementCount > 0) main.appendChild(sub);
 
       const open = document.createElement('span');
       open.className = 'book-open';
