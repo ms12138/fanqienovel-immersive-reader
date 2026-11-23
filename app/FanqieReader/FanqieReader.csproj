@@ -23,6 +23,8 @@
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <!-- Do not ship XML doc comments / PDBs of referenced packages. -->
     <AllowedReferenceRelatedFileExtensions>none</AllowedReferenceRelatedFileExtensions>
+    <!-- 发布出来的可执行文件名（程序集仍叫 FanqieReader） -->
+    <AppExeName>番茄沉浸阅读器.exe</AppExeName>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3351.48" />
@@ -34,4 +36,21 @@
     </Content>
     <None Include="assets\icon.ico" />
   </ItemGroup>
+
+  <!--
+    应用名叫「番茄沉浸阅读器」，但程序集保持 ASCII 的 FanqieReader：
+    发布后把 apphost（FanqieReader.exe）改名成中文名，其余文件（FanqieReader.dll /
+    runtimeconfig.json / deps.json）保持原名，apphost 里内嵌的是 DLL 名，改名不受影响。
+  -->
+  <Target Name="RenameAppHost" AfterTargets="Publish" Condition="'$(PublishSingleFile)' != 'true'">
+    <PropertyGroup>
+      <_PublishAppHost>$(PublishDir)$(AssemblyName).exe</_PublishAppHost>
+      <_PublishAppHostRenamed>$(PublishDir)$(AppExeName)</_PublishAppHostRenamed>
+    </PropertyGroup>
+    <Move SourceFiles="$(_PublishAppHost)"
+          DestinationFiles="$(_PublishAppHostRenamed)"
+          Condition="Exists('$(_PublishAppHost)')"
+          OverwriteReadOnlyFiles="true" />
+    <Message Importance="high" Text="Renamed app host to $(_PublishAppHostRenamed)" />
+  </Target>
 </Project>

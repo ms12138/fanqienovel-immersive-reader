@@ -20,7 +20,9 @@ concurrency:
 env:
   DOTNET_VERSION: 9.0.x
   PROJECT_DIR: app/FanqieReader
-  PUBLISH_DIR: dist/番茄沉浸阅读器
+  # 用 ASCII 路径，避免 Windows runner 上中文路径带来的编码问题。
+  # zip 里是这个目录的“内容”，所以解压后的文件夹名不受影响。
+  PUBLISH_DIR: dist/package
 
 jobs:
   build:
@@ -44,45 +46,56 @@ jobs:
           restore-keys: |
             nuget-${{ runner.os }}-
 
+      - name: Show toolchain
+        shell: pwsh
+        run: |
+          dotnet --version
+          node --version
+
       - name: Check web assets syntax
         shell: pwsh
-        run: node --check app/FanqieReader/WebAssets/app.js
+        run: node --check "$env:GITHUB_WORKSPACE/$env:PROJECT_DIR/WebAssets/app.js"
 
       - name: Restore
+        shell: pwsh
         working-directory: ${{ env.PROJECT_DIR }}
         run: dotnet restore --nologo
 
       - name: Build (Release)
+        shell: pwsh
         working-directory: ${{ env.PROJECT_DIR }}
         run: dotnet build -c Release --no-restore --nologo
 
       - name: Publish (self-contained win-x64)
+        shell: pwsh
         working-directory: ${{ env.PROJECT_DIR }}
-        run: >
-          dotnet publish -c Release -r win-x64 --self-contained true
-          -p:PublishSingleFile=false -p:PublishTrimmed=false
-          -o "${{ github.workspace }}/${{ env.PUBLISH_DIR }}"
-          --no-restore --nologo
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE $env:PUBLISH_DIR
+          Write-Host "publishing to $out"
+          dotnet publish -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=false -p:PublishTrimmed=false `
+            --output $out --nologo
+          if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
 
       - name: Verify package contents
         shell: pwsh
         run: |
           $dir = Join-Path $env:GITHUB_WORKSPACE $env:PUBLISH_DIR
-          $required = @(
-            (Join-Path $dir '番茄沉浸阅读器.exe'),
-            (Join-Path $dir 'FanqieReader.dll'),
-            (Join-Path $dir 'WebAssets/index.html'),
-            (Join-Path $dir 'WebAssets/app.js'),
-            (Join-Path $dir 'WebAssets/styles.css')
-          )
-          foreach ($path in $required) {
-            if (-not (Test-Path $path)) { throw "missing in package: $path" }
+          if (-not (Test-Path $dir)) { throw "publish output missing: $dir" }
+
+          # createdump.exe ships with the .NET runtime, the other one is the app
+          $exe = @(Get-ChildItem $dir -Filter '*.exe' -File | Where-Object { $_.Name -ne 'createdump.exe' })
+          if ($exe.Count -ne 1) { throw "expected exactly one app exe, found $($exe.Count)" }
+
+          foreach ($rel in @('FanqieReader.dll', 'WebAssets/index.html', 'WebAssets/app.js', 'WebAssets/styles.css')) {
+            $path = Join-Path $dir $rel
+            if (-not (Test-Path $path)) { throw "missing in package: $rel" }
           }
 
           $files = Get-ChildItem $dir -Recurse -File
           $size = [math]::Round((($files | Measure-Object -Sum Length).Sum) / 1MB, 1)
-          Write-Host "package: $($files.Count) files, $size MB"
-          # 自包含的 .NET 桌面运行时本身就是 250+ 个文件，少了说明 publish 没跑完
+          Write-Host ("package: {0} files, {1} MB, exe = {2}" -f $files.Count, $size, $exe[0].Name)
+          # a self-contained .NET desktop runtime alone is 250+ files; fewer means publish did not finish
           if ($files.Count -lt 200) { throw "package looks incomplete: only $($files.Count) files" }
 
       - name: Package zip
@@ -97,7 +110,7 @@ jobs:
                            -DestinationPath $zip -CompressionLevel Optimal
 
           $mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
-          Write-Host "zip: $(Split-Path $zip -Leaf) ($mb MB)"
+          Write-Host ("zip: {0} ({1} MB)" -f (Split-Path $zip -Leaf), $mb)
 
           "zip_path=$zip" >> $env:GITHUB_OUTPUT
           "zip_name=$(Split-Path $zip -Leaf)" >> $env:GITHUB_OUTPUT
