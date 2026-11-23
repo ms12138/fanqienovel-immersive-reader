@@ -29,17 +29,24 @@ public sealed class SettingsStore
 
     public string DataDirectory => _dir;
 
-    public string WebViewDataDirectory
+    public string WebViewDataDirectory => WebViewDataDirectoryFor(Current.WebViewProfileSuffix);
+
+    /// <summary>
+    /// 登录态放在 WebView2 自己的配置目录里。后缀为空时是默认目录；被别的实例占用
+    /// 或不可写时会退到 -2 / -3 / -4，保证程序总能启动（代价是要重新登录一次）。
+    /// </summary>
+    /// <summary>便携模式：把登录配置放到指定目录（--profile-dir 或 settings.json 旁边）。</summary>
+    public static string? ProfileRootOverride { get; set; }
+
+    public string WebViewDataDirectoryFor(string suffix)
     {
-        get
-        {
-            var local = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "FanqieReader",
-                "WebView2");
-            Directory.CreateDirectory(local);
-            return local;
-        }
+        var root = ProfileRootOverride
+                   ?? Path.Combine(
+                       Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                       "FanqieReader");
+        var local = Path.Combine(root, "WebView2" + suffix);
+        Directory.CreateDirectory(local);
+        return local;
     }
 
     public AppSettings Load()

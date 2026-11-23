@@ -59,10 +59,16 @@ public sealed partial class FanqieClient
         }
 
         var entries = new Dictionary<string, ShelfEntry>(StringComparer.Ordinal);
+        var diag = new List<object>();
         using (info)
         {
+            diag.Add(new { endpoint = "bookshelf/info", code = GetInt(info.RootElement, "code"), data = Sample(info.RootElement.GetRawText()) });
             var data = GetObject(info.RootElement, "data");
-            if (data is null) return new List<BookSummary>();
+            if (data is null)
+            {
+                WriteDiagnostics(diag);
+                return new List<BookSummary>();
+            }
 
             // Shelf items sometimes nest a full book object (author, 完结状态, 总章数),
             // so harvest every book-shaped object first, then overlay the shelf-only
@@ -88,14 +94,14 @@ public sealed partial class FanqieClient
         if (entries.Count == 0) return new List<BookSummary>();
 
         // Book metadata (author / 完结 / 总章数) — one request for the whole shelf.
-        var details = await GetBookDetailsAsync(entries.Keys.ToList());
+        var details = await GetBookDetailsAsync(entries.Keys.ToList(), diag);
         foreach (var pair in details)
         {
             if (entries.TryGetValue(pair.Key, out var entry)) entry.MergeFrom(pair.Value);
         }
 
         // Where the account actually stopped reading.
-        var progress = await GetReadProgressAsync();
+        var progress = await GetReadProgressAsync(diag);
         foreach (var pair in progress)
         {
             if (!entries.TryGetValue(pair.Key, out var entry)) continue;
@@ -103,13 +109,65 @@ public sealed partial class FanqieClient
             if (pair.Value.Order > 0) entry.Order = pair.Value.Order;
         }
 
-        return entries.Values.Select(e => e.ToSummary()).ToList();
+        var result = entries.Values.Select(e => e.ToSummary()).ToList();
+        diag.Add(new
+        {
+            endpoint = "summary",
+            books = result.Count,
+            withAuthor = result.Count(b => b.Author.Length > 0),
+            withProgress = result.Count(b => !string.IsNullOrEmpty(b.ReadText)),
+            withChapter = result.Count(b => b.ChapterId.Length > 0)
+        });
+        WriteDiagnostics(diag);
+        return result;
     }
 
     /// <summary>Wired to the app log so failed metadata calls are diagnosable.</summary>
     public static Action<string>? Trace { get; set; }
 
     private static void LogTrace(string message) => Trace?.Invoke("[shelf] " + message);
+
+    /// <summary>
+    /// 把一次书架加载的原始应答写到 %LOCALAPPDATA%\FanqieReader\logs\shelf-dump.json，
+    /// 方便对着真实字段改解析（字段名随官方改版变化，靠猜不可靠）。
+    /// </summary>
+    private static void WriteDiagnostics(IReadOnlyList<object> entries)
+    {
+        try
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "FanqieReader",
+                "logs");
+            Directory.CreateDirectory(dir);
+            var file = Path.Combine(dir, "shelf-dump.json");
+            var payload = new
+            {
+                at = DateTime.Now.ToString("O"),
+                attempts = entries
+            };
+            File.WriteAllText(file, JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
+            LogTrace("dump written: " + file);
+        }
+        catch (Exception ex)
+        {
+            LogTrace("dump failed: " + ex.Message);
+        }
+    }
+
+    private static object Sample(string raw, int max = 1800)
+    {
+        if (raw.Length > max) raw = raw[..max] + "…";
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            return doc.RootElement.Clone();
+        }
+        catch
+        {
+            return raw;
+        }
+    }
 
     private static string DescribeShelfError(int code, string message) => code switch
     {
@@ -225,7 +283,7 @@ public sealed partial class FanqieClient
     // book metadata
     // ------------------------------------------------------------------
 
-    private async Task<Dictionary<string, ShelfEntry>> GetBookDetailsAsync(List<string> bookIds)
+    private async Task<Dictionary<string, ShelfEntry>> GetBookDetailsAsync(List<string> bookIds, List<object> diag)
     {
         var result = new Dictionary<string, ShelfEntry>(StringComparer.Ordinal);
         if (bookIds.Count == 0) return result;
@@ -254,6 +312,7 @@ public sealed partial class FanqieClient
                 else
                 {
                     LogTrace($"multidetail code={code} msg={GetString(doc.RootElement, "message")} numbers={asNumbers}");
+                    diag.Add(new { endpoint = "multidetail", code, numbers = asNumbers, data = Sample(doc.RootElement.GetRawText()) });
                 }
             }
             catch (Exception ex)
@@ -281,11 +340,13 @@ public sealed partial class FanqieClient
                 {
                     CollectBooks(doc.RootElement, result);
                     LogTrace($"simple/info ok, books={result.Count} numbers={asNumbers}");
+                    if (result.Count == 0) diag.Add(new { endpoint = "simple/info-empty", code, numbers = asNumbers, data = Sample(doc.RootElement.GetRawText()) });
                     if (result.Count > 0) return result;
                 }
                 else
                 {
                     LogTrace($"simple/info code={code} msg={GetString(doc.RootElement, "message")} numbers={asNumbers}");
+                    diag.Add(new { endpoint = "simple/info", code, numbers = asNumbers, data = Sample(doc.RootElement.GetRawText()) });
                 }
             }
             catch (Exception ex)
@@ -350,7 +411,7 @@ public sealed partial class FanqieClient
     // reading progress
     // ------------------------------------------------------------------
 
-    private async Task<Dictionary<string, (string ItemId, int Order)>> GetReadProgressAsync()
+    private async Task<Dictionary<string, (string ItemId, int Order)>> GetReadProgressAsync(List<object> diag)
     {
         var map = new Dictionary<string, (string ItemId, int Order)>(StringComparer.Ordinal);
         try
@@ -363,10 +424,12 @@ public sealed partial class FanqieClient
             if (code != 0)
             {
                 LogTrace($"progress code={code} msg={GetString(doc.RootElement, "message")}");
+                diag.Add(new { endpoint = "progress", code, data = Sample(doc.RootElement.GetRawText()) });
                 return map;
             }
             CollectProgress(doc.RootElement, map);
             LogTrace($"progress ok, books={map.Count}");
+            diag.Add(new { endpoint = "progress", code, books = map.Count, data = Sample(doc.RootElement.GetRawText()) });
         }
         catch
         {

@@ -17,7 +17,8 @@
   </WindowChrome.WindowChrome>
 
   <Grid>
-    <wv2:WebView2 x:Name="View" DefaultBackgroundColor="Transparent" />
+    <!-- WebView2 由代码创建：登录配置被占用时要能整个换一个实例重来 -->
+    <Grid x:Name="WebHost" />
 
     <Border x:Name="BootOverlay" Background="#F4F0E8">
       <Grid>

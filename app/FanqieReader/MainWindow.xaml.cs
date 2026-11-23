@@ -66,6 +66,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settingsStore = new SettingsStore();
+        ApplyProfileOverride();
         _settings = _settingsStore.Load();
         FanqieClient.Trace = DebugLog;
         _edgeHide = new EdgeHideController(this);
@@ -190,36 +191,88 @@ public partial class MainWindow : Window
                || ex.Message.Contains("in use", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>由代码创建的 WebView2；登录配置不可用时整块换掉重建。</summary>
+    private WebView2 View { get; set; } = null!;
+
+    private string? _pendingProfileNotice;
+
+    private WebView2 CreateWebView(string userDataFolder)
+    {
+        var view = new WebView2
+        {
+            CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = userDataFolder },
+            DefaultBackgroundColor = System.Drawing.Color.Transparent
+        };
+        WebHost.Children.Clear();
+        WebHost.Children.Add(view);
+        return view;
+    }
+
     private async Task InitializeWebViewAsync()
     {
-        var userData = _settingsStore.WebViewDataDirectory;
-        View.CreationProperties = new CoreWebView2CreationProperties
+        // 依次尝试：上次用过的配置目录 → 默认 → -2 → -3 → -4。任何一个能用就继续，
+        // 这样"配置目录被占用 / 不可写"不会再让整个程序打不开（代价是要重新登录）。
+        var candidates = new List<string>();
+        void Add(string suffix)
         {
-            UserDataFolder = userData
-        };
+            if (!candidates.Contains(suffix)) candidates.Add(suffix);
+        }
 
-        // A previously killed reader can keep the profile locked for a moment, so a
-        // short retry is worth more than an error dialog.
-        for (var attempt = 1; ; attempt++)
+        Add(_settings.WebViewProfileSuffix ?? "");
+        Add("");
+        Add("-2");
+        Add("-3");
+        Add("-4");
+
+        // 后缀和目录成对保留，避免跳过某个候选时后缀与目录错位
+        var attempts = new List<(string Suffix, string Folder)>();
+        foreach (var candidate in candidates)
         {
+            try { attempts.Add((candidate, _settingsStore.WebViewDataDirectoryFor(candidate))); }
+            catch (Exception ex) { DebugLog($"profile dir '{candidate}' unusable: {ex.Message}"); }
+        }
+        try
+        {
+            // 最后兜底：临时目录（LOCALAPPDATA 只读时仍能启动）
+            attempts.Add(("-temp", Path.Combine(Path.GetTempPath(), "FanqieReader", "WebView2-temp")));
+        }
+        catch { }
+
+        Exception? lastError = null;
+        foreach (var (suffix, folder) in attempts)
+        {
+            DebugLog($"WebView2 profile try: '{folder}'");
+
+            View = CreateWebView(folder);
             try
             {
-                var initTask = View.EnsureCoreWebView2Async();
-                if (await Task.WhenAny(initTask, Task.Delay(TimeSpan.FromSeconds(20))) != initTask)
+                await EnsureCoreAsync();
+                DebugLog($"WebView2 core ready (profile suffix '{suffix}')");
+                if (!string.Equals(suffix, _settings.WebViewProfileSuffix, StringComparison.Ordinal))
                 {
-                    throw new TimeoutException("WebView2 初始化超时。请确认 WebView2 Runtime 正常，并尝试重新打开阅读器。");
+                    _settings.WebViewProfileSuffix = suffix;
+                    _settingsStore.Save();
+                    if (suffix.Length > 0)
+                    {
+                        _pendingProfileNotice =
+                            "原来的登录配置被其它进程占用或不可写，已切换到新的配置目录，需要重新登录一次。";
+                    }
                 }
-                await initTask;
                 break;
             }
-            catch (Exception ex) when (attempt < 3 && IsProfileBusy(ex))
+            catch (Exception ex) when (IsProfileBusy(ex) || ex is UnauthorizedAccessException or IOException)
             {
-                DebugLog($"WebView2 profile busy (attempt {attempt}): {ex.Message}");
-                await Task.Delay(TimeSpan.FromMilliseconds(1500 * attempt));
+                lastError = ex;
+                DebugLog($"profile '{suffix}' unusable: {ex.Message}");
+                try { View?.Dispose(); } catch { }
             }
         }
 
-        DebugLog("WebView2 core ready");
+        if (View is null || View.CoreWebView2 is null)
+        {
+            throw lastError ?? new FanqieException("无法初始化内嵌浏览器。");
+        }
+
         var core = View.CoreWebView2;
         View.DefaultBackgroundColor = System.Drawing.Color.Transparent;
 
@@ -271,8 +324,36 @@ public partial class MainWindow : Window
         _edgeHide.Enabled = _settings.EdgeHide;
         _edgeHide.Start();
         ApplyOpacity(_opacityPercent);
+
+        if (_pendingProfileNotice is not null)
+        {
+            Send("toast", new { message = _pendingProfileNotice, kind = "error" });
+            _pendingProfileNotice = null;
+        }
     }
 
+    private async Task EnsureCoreAsync()
+    {
+        // 上一次异常退出可能还占着配置目录几秒，重试一次比直接报错友好。
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                var initTask = View.EnsureCoreWebView2Async();
+                if (await Task.WhenAny(initTask, Task.Delay(TimeSpan.FromSeconds(20))) != initTask)
+                {
+                    throw new TimeoutException("WebView2 初始化超时。请确认 WebView2 Runtime 正常。");
+                }
+                await initTask;
+                return;
+            }
+            catch (Exception ex) when (attempt < 2 && IsProfileBusy(ex))
+            {
+                DebugLog($"profile busy (attempt {attempt}): {ex.Message}");
+                await Task.Delay(TimeSpan.FromMilliseconds(900 * attempt));
+            }
+        }
+    }
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
         if (!e.Uri.StartsWith("https://fanqie.reader/", StringComparison.OrdinalIgnoreCase))
@@ -882,6 +963,31 @@ public partial class MainWindow : Window
         _settingsStore.Save();
     }
 
+    /// <summary>
+    /// <c>--profile-dir &lt;path&gt;</c>：便携模式，把 WebView2 登录配置放到指定目录，
+    /// 方便整个文件夹随身带走，也方便排查"配置目录不可用"的问题。
+    /// </summary>
+    private static void ApplyProfileOverride()
+    {
+        var args = Environment.GetCommandLineArgs();
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (!args[i].Equals("--profile-dir", StringComparison.OrdinalIgnoreCase)) continue;
+            try
+            {
+                var path = Path.GetFullPath(args[i + 1]);
+                Directory.CreateDirectory(path);
+                SettingsStore.ProfileRootOverride = path;
+                DebugLog("profile root override: " + path);
+            }
+            catch (Exception ex)
+            {
+                DebugLog("profile override failed: " + ex.Message);
+            }
+            return;
+        }
+    }
+
     private void ApplyTheme(string theme)
     {
         var night = theme == "night";
@@ -893,7 +999,7 @@ public partial class MainWindow : Window
         // backdrop (or the desktop, when glass is unavailable) can show through.
         Background = Brushes.Transparent;
         BootOverlay.Background = new SolidColorBrush(Color.FromRgb(background.R, background.G, background.B));
-        View.DefaultBackgroundColor = System.Drawing.Color.Transparent;
+        if (View is not null) View.DefaultBackgroundColor = System.Drawing.Color.Transparent;
         ApplyDwmWindowStyle();
     }
 
@@ -1031,7 +1137,7 @@ public partial class MainWindow : Window
         if (handle == IntPtr.Zero) return false;
 
         Background = Brushes.Transparent;
-        View.DefaultBackgroundColor = System.Drawing.Color.Transparent;
+        if (View is not null) View.DefaultBackgroundColor = System.Drawing.Color.Transparent;
 
         if (ApplyAccentAcrylic(handle))
         {
@@ -1193,10 +1299,12 @@ public partial class MainWindow : Window
     {
         try
         {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "FanqieReader",
-                "logs");
+            // 便携模式（--profile-dir）下日志跟着配置目录走，整个文件夹可以随身带走
+            var root = SettingsStore.ProfileRootOverride
+                       ?? Path.Combine(
+                           Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                           "FanqieReader");
+            var dir = Path.Combine(root, "logs");
             Directory.CreateDirectory(dir);
             File.AppendAllText(
                 Path.Combine(dir, "reader.log"),

@@ -14,8 +14,8 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
-    <Version>1.0.1</Version>
-    <FileVersion>1.0.1.0</FileVersion>
+    <Version>1.0.2</Version>
+    <FileVersion>1.0.2.0</FileVersion>
     <Product>番茄沉浸阅读器</Product>
     <Company>DSH</Company>
     <Description>轻量、极简、沉浸式的番茄小说网页阅读器</Description>

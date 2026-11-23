@@ -30,6 +30,7 @@
 - [从源码构建](#从源码构建)
 - [项目结构](#项目结构)
 - [数据位置](#数据位置)
+- [常见问题](#常见问题)
 - [已知限制](#已知限制)
 - [免责声明](#免责声明)
 - [许可证](#许可证)
@@ -180,6 +181,27 @@ fanqienovel-immersive-reader/
 - WebView2 配置与登录态：`%LOCALAPPDATA%\FanqieReader\WebView2`
 - 运行日志：`%LOCALAPPDATA%\FanqieReader\logs\reader.log`（排查启动 / 网络问题用）
 - 二维码与正文请求不写入磁盘；字体只做内存缓存
+
+## 常见问题
+
+**打开时提示「无法启动内嵌浏览器（WebView2）」/「请求的资源在使用中」(0x800700AA)**
+
+登录态存在 WebView2 自己的配置目录里。上一次异常退出、或另一个阅读器实例还在跑时，这个目录会被占用。
+新版会自动依次尝试 `...\WebView2`、`WebView2-2`、`WebView2-3`…，换了目录后**需要重新登录一次**；每一步都记录在
+`%LOCALAPPDATA%\FanqieReader\logs\reader.log`。
+
+**想做成真正的便携版（配置跟着文件夹走）**
+
+```powershell
+番茄沉浸阅读器.exe --profile-dir "D:\FanqieProfile"
+```
+
+登录配置和日志都会放到指定目录，整个文件夹可以随身带走。
+
+**书架的作者 / 阅读进度不对**
+
+阅读器会把这一轮书架接口的原始应答写到 `%LOCALAPPDATA%\FanqieReader\logs\shelf-dump.json`。
+这类字段名随官方改版变化，遇到问题把这个文件连同日志一起发出来即可定位。
 
 ## 已知限制
 

@@ -19,6 +19,9 @@ public sealed class AppSettings
     public string? LastChapterTitle { get; set; }
     public double LastScrollRatio { get; set; }
 
+    /// <summary>WebView2 配置目录后缀：登录态被占用/不可写时自动换成 -2、-3。</summary>
+    public string WebViewProfileSuffix { get; set; } = "";
+
     public void Clamp()
     {
         if (Theme is not ("day" or "night")) Theme = "day";
@@ -27,6 +30,7 @@ public sealed class AppSettings
         WindowWidth = Math.Clamp(WindowWidth, 460, 2400);
         WindowHeight = Math.Clamp(WindowHeight, 360, 1800);
         LastScrollRatio = Math.Clamp(LastScrollRatio, 0, 1);
+        if (WebViewProfileSuffix is not ("") and not ("-2") and not ("-3") and not ("-4")) WebViewProfileSuffix = "";
     }
 }
 
