@@ -1,0 +1,18 @@
+# 统一换行，避免 Windows / CI 之间来回改
+* text=auto
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
+*.dll binary
+*.exe binary
+
+*.cs   text
+*.xaml text
+*.csproj text
+*.manifest text
+*.md   text
+*.js   text
+*.css  text
+*.html text

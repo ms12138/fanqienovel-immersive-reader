@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="day">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>沉浸式阅读器</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <button class="immersive-exit" id="immersiveExit">退出沉浸 <kbd>Alt</kbd><kbd>Shift</kbd><kbd>Q</kbd></button>
+    <header class="titlebar" id="titlebar">
+      <div class="titlebar-drag" id="dragZone">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 7.2c-2.1-2.2-5.8-1.1-5.8 2.6 0 4.6 4.3 8.4 5.8 9.4 1.5-1 5.8-4.8 5.8-9.4 0-3.7-3.7-4.8-5.8-2.6Z" fill="currentColor"/><path d="M12 7.2V3.6m0 0c1.8 0 3.1 1 3.4 2.4M12 3.6c-1.6 0-2.9.8-3.4 2.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </span>
+          <span class="brand-copy">
+            <span class="brand-name">沉浸式阅读器</span>
+            <span class="brand-sub">FANQIE · READER</span>
+          </span>
+        </div>
+        <div class="titlebar-book" id="titlebarBook"></div>
+      </div>
+      <nav class="window-controls" aria-label="窗口控制">
+        <button class="win-btn" id="menuBtn" aria-label="菜单" title="菜单">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M4 10h12M4 14h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <button class="win-btn" id="minBtn" aria-label="最小化" title="最小化">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <button class="win-btn win-btn--close" id="closeBtn" aria-label="关闭" title="关闭">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 6 8 8M14 6l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </nav>
+      <div class="reading-progress" id="progressLine"><i></i></div>
+    </header>
+
+    <main class="main" id="main">
+      <section class="view welcome" id="welcomeView">
+        <div class="welcome-copy">
+          <div class="kicker"><span class="kicker-line"></span> A QUIET PLACE TO READ</div>
+          <h1>在安静处，<br><em>读一个故事。</em></h1>
+          <p class="welcome-lead">去掉网页的喧嚣，只留下文字。<br>轻量、克制，也可以随时藏进屏幕边缘。</p>
+          <div class="welcome-actions">
+            <button class="btn btn--primary" id="welcomeShelfBtn">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.5h5v11H4zM11 4.5h5v11h-5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+              打开书架
+            </button>
+            <button class="btn btn--ghost" id="welcomeInputBtn">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10M10 5v10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              输入书号
+            </button>
+          </div>
+          <div class="welcome-notes">
+            <span><kbd>Alt</kbd><kbd>Shift</kbd><kbd>Q</kbd> 沉浸模式</span>
+            <span class="dot"></span>
+            <span>字号 12–32 px</span>
+            <span class="dot"></span>
+            <span>透明度 30–100%</span>
+          </div>
+        </div>
+
+        <div class="welcome-side" aria-hidden="true">
+          <div class="orbit orbit--one"></div>
+          <div class="orbit orbit--two"></div>
+          <div class="monogram">番</div>
+          <div class="vertical-note">READ<br>SLOWLY</div>
+          <div class="quote-card">
+            <span class="quote-mark">“</span>
+            <p>书是一扇<br>安静打开的门。</p>
+          </div>
+        </div>
+
+        <div class="continue-card" id="continueCard" hidden>
+          <div class="continue-label">继续阅读</div>
+          <div class="continue-main">
+            <div class="continue-text">
+              <strong id="continueBook"></strong>
+              <span id="continueChapter"></span>
+            </div>
+            <button class="round-arrow" id="continueBtn" aria-label="继续阅读">
+              <svg viewBox="0 0 20 20"><path d="M4 10h11m-4-4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="welcome-footer">
+          <span>番茄小说 · 网页阅读</span>
+          <span class="welcome-footer-line"></span>
+          <span>v1.0</span>
+        </div>
+      </section>
+
+      <section class="view shelf-view" id="shelfView" hidden>
+        <div class="shelf-head">
+          <button class="icon-btn" id="shelfBackBtn" aria-label="返回">
+            <svg viewBox="0 0 20 20"><path d="M12.5 4.5 7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div>
+            <div class="kicker kicker--small">MY LIBRARY</div>
+            <h2>我的书架</h2>
+          </div>
+          <div class="shelf-tools">
+            <span class="shelf-count" id="shelfCount"></span>
+            <button class="icon-btn" id="shelfRefreshBtn" aria-label="刷新书架" title="刷新书架">
+              <svg viewBox="0 0 20 20"><path d="M16 9a6 6 0 1 0-1.6 5.4M16 4.7V9h-4.3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="shelf-content" id="shelfContent">
+          <div class="shelf-list" id="shelfList"></div>
+          <div class="empty-note" id="shelfEmpty" hidden>
+            <div class="empty-glyph">书</div>
+            <h3>书架还是空的</h3>
+            <p>在番茄小说网页中加入书架，或登录后同步账号里的书。</p>
+            <button class="btn btn--primary" id="shelfLoginBtn">登录同步</button>
+          </div>
+          <div class="skeleton-list" id="shelfSkeleton" hidden>
+            <div class="skeleton-row"></div><div class="skeleton-row"></div><div class="skeleton-row"></div><div class="skeleton-row"></div><div class="skeleton-row"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view reader-view" id="readerView" hidden>
+        <div class="reader-scroll" id="readerScroll">
+          <article class="reader-paper" id="readerPaper">
+            <header class="chapter-head">
+              <div class="chapter-eyebrow" id="bookTitle"></div>
+              <h1 class="chapter-title" id="chapterTitle"></h1>
+              <div class="chapter-meta" id="chapterMeta"></div>
+              <div class="chapter-rule"><span></span></div>
+            </header>
+            <div class="chapter-body" id="chapterBody"></div>
+            <div class="preview-notice" id="previewNotice" hidden>
+              <span class="preview-dot"></span>
+              这是试读片段。登录已购/SVIP 账号后可在网页畅读全文。
+            </div>
+            <div class="chapter-end"><span></span><em>本章完</em><span></span></div>
+          </article>
+        </div>
+        <div class="reader-loading" id="readerLoading" hidden>
+          <div class="loading-stack"><i></i><i></i><i></i></div>
+          <span id="readerLoadingText">正在取回正文…</span>
+        </div>
+        <footer class="reader-nav" id="readerNav">
+          <button class="nav-btn" id="prevBtn"><span>←</span> 上一章</button>
+          <button class="nav-btn nav-btn--center" id="tocBtn"><span class="nav-icon"></span>目录</button>
+          <button class="nav-btn nav-btn--right" id="nextBtn">下一章 <span>→</span></button>
+        </footer>
+      </section>
+    </main>
+
+    <aside class="menu-panel" id="menuPanel" hidden>
+      <div class="account-strip" id="accountStrip">
+        <div class="avatar" id="accountAvatar">番</div>
+        <div class="account-copy">
+          <strong id="accountName">未登录</strong>
+          <span id="accountHint">登录后同步书架</span>
+        </div>
+        <button class="mini-btn" id="accountBtn">登录</button>
+      </div>
+
+      <div class="menu-group">
+        <button class="menu-item" id="menuShelfBtn">
+          <span class="menu-item-icon">
+            <svg viewBox="0 0 20 20"><path d="M4 4.5h5v11H4zM11 4.5h5v11h-5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          </span>
+          <span>打开书架</span>
+          <svg class="menu-chevron" viewBox="0 0 20 20"><path d="m8 5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+
+      <div class="menu-section-label">阅读设置</div>
+      <div class="setting-row">
+        <div class="setting-copy"><label>字号</label><small>12 – 32 px</small></div>
+        <div class="stepper" data-stepper="font">
+          <button data-step="-1" aria-label="减小字号">−</button>
+          <span id="fontSizeValue">19 px</span>
+          <button data-step="1" aria-label="增大字号">＋</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-copy"><label>透明度</label><small data-opacity-note>30 – 100%</small></div>
+        <div class="stepper" data-stepper="opacity">
+          <button data-step="-1" aria-label="降低透明度">−</button>
+          <span id="opacityValue">100%</span>
+          <button data-step="1" aria-label="提高透明度">＋</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-copy"><label>主题</label><small>日间 / 夜间</small></div>
+        <div class="segmented" id="themeSeg">
+          <button data-theme="day">日间</button>
+          <button data-theme="night">夜间</button>
+        </div>
+      </div>
+
+      <div class="menu-divider"></div>
+      <div class="setting-row setting-row--switch">
+        <div class="setting-copy"><label>贴边隐藏</label><small>左 · 右 · 上边缘</small></div>
+        <button class="switch" id="edgeToggle" role="switch" aria-checked="false"><i></i></button>
+      </div>
+      <div class="setting-row setting-row--switch">
+        <div class="setting-copy"><label>沉浸式阅读</label><small><kbd>Alt</kbd> <kbd>Shift</kbd> <kbd>Q</kbd></small></div>
+        <button class="switch" id="immersiveToggle" role="switch" aria-checked="false"><i></i></button>
+      </div>
+
+      <div class="menu-footer">
+        <span id="loginStateText">未登录</span>
+        <button id="logoutBtn" hidden>退出登录</button>
+      </div>
+    </aside>
+
+    <div class="modal-overlay" id="loginOverlay" hidden>
+      <div class="modal login-modal" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+        <div class="modal-head">
+          <div>
+            <div class="kicker kicker--small">FANQIE ACCOUNT</div>
+            <h2 id="loginTitle">登录番茄小说</h2>
+          </div>
+          <button class="icon-btn" id="loginCloseBtn" aria-label="关闭">
+            <svg viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="tabs" role="tablist">
+          <button class="tab is-active" data-login-tab="cookie" role="tab">Cookie 登录</button>
+          <button class="tab" data-login-tab="qr" role="tab">扫码登录</button>
+          <span class="tab-ink" id="tabInk"></span>
+        </div>
+
+        <div class="login-pane" id="cookiePane">
+          <p class="modal-desc">在浏览器登录 fanqienovel.com 后，打开开发者工具 → 网络 → 任意番茄请求 → 复制完整 Cookie 请求头。推荐这一方式，登录最稳定。</p>
+          <textarea id="cookieInput" spellcheck="false" placeholder="sessionid=...; passport_csrf_token=...; sid_guard=..."></textarea>
+          <div class="input-help">
+            <button class="text-btn" id="pasteCookieBtn">从剪贴板粘贴</button>
+            <span>支持 document.cookie / 请求头 / JSON 导出</span>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn--primary" id="cookieLoginBtn">登录</button>
+            <button class="btn btn--secondary" id="qrLoginBtn">二维码登录</button>
+          </div>
+          <p class="modal-footnote" id="loginMessage">Cookie 只用于读取你自己的书架与正文。</p>
+        </div>
+
+        <div class="login-pane" id="qrPane" hidden>
+          <div class="qr-visual" id="qrVisual" aria-live="polite">
+            <div class="qr-grid" aria-hidden="true">
+              <span class="qr-corner qr-corner--tl"></span><span class="qr-corner qr-corner--tr"></span>
+              <span class="qr-corner qr-corner--bl"></span>
+              <span class="qr-corner qr-corner--br"></span>
+              <span class="qr-dot qr-dot--a"></span><span class="qr-dot qr-dot--b"></span><span class="qr-dot qr-dot--c"></span>
+              <span class="qr-scan"></span>
+            </div>
+            <img class="qr-image" id="qrImage" alt="番茄小说登录二维码" hidden>
+            <span class="qr-placeholder" id="qrPlaceholder">点击下方按钮获取二维码</span>
+          </div>
+          <p class="qr-title" id="qrTitle">使用抖音 App 扫码登录</p>
+          <p class="modal-desc modal-desc--center">二维码由番茄官方接口生成。扫码后请在手机上确认，登录状态会自动同步。</p>
+          <button class="btn btn--primary btn--wide" id="openQrBtn">获取二维码</button>
+          <p class="qr-status" id="qrStatus">全程不会获取你的账号密码</p>
+          <p class="modal-footnote modal-footnote--center">官方接口 · fanqienovel.com</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="inputOverlay" hidden>
+      <div class="modal input-modal" role="dialog" aria-modal="true" aria-labelledby="inputTitle">
+        <div class="modal-head">
+          <div>
+            <div class="kicker kicker--small">OPEN BY ID</div>
+            <h2 id="inputTitle">打开一本书</h2>
+          </div>
+          <button class="icon-btn" id="inputCloseBtn" aria-label="关闭">
+            <svg viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <p class="modal-desc">粘贴章节链接，或输入番茄小说的章节 / 书籍编号。书籍编号会从第一章开始。</p>
+        <input class="text-input" id="idInput" inputmode="numeric" placeholder="例如 7664920266870374936 或 https://fanqienovel.com/reader/…">
+        <div class="modal-actions">
+          <button class="btn btn--primary" id="openIdBtn">开始阅读</button>
+        </div>
+      </div>
+    </div>
+
+    <aside class="catalog-drawer" id="catalogDrawer" hidden aria-label="目录">
+      <div class="drawer-head">
+        <div>
+          <div class="kicker kicker--small">CONTENTS</div>
+          <h2>目录</h2>
+        </div>
+        <button class="icon-btn" id="catalogCloseBtn" aria-label="关闭目录">
+          <svg viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="drawer-search">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="m12.5 12.5 3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <input id="catalogSearch" placeholder="搜索章节">
+        <span id="catalogCount"></span>
+      </div>
+      <div class="catalog-list" id="catalogList"></div>
+      <div class="catalog-empty" id="catalogEmpty" hidden>目录暂时不可用</div>
+    </aside>
+    <div class="drawer-scrim" id="drawerScrim" hidden></div>
+
+    <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

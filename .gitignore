@@ -1,0 +1,41 @@
+# ---- 构建产物 ----
+bin/
+obj/
+dist/
+publish/
+*.zip
+*.7z
+*.rar
+*.nupkg
+*.pdb
+TestResults/
+
+# ---- IDE / 编辑器 ----
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.swp
+*~
+
+# ---- 依赖 ----
+node_modules/
+packages/
+
+# ---- 本地私有内容（不要上传）----
+private/
+已抓的请求/
+验收截图/
+11-23测试bug.txt
+*.cookie
+cookies.txt
+cookies.json
+*.har
+*.log
+logs/
+
+# ---- 系统 ----
+Thumbs.db
+desktop.ini
+.DS_Store

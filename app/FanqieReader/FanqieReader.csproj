@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\icon.ico</ApplicationIcon>
+    <AssemblyName>FanqieReader</AssemblyName>
+    <RootNamespace>FanqieReader</RootNamespace>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Product>番茄沉浸阅读器</Product>
+    <Company>DSH</Company>
+    <Description>轻量、极简、沉浸式的番茄小说网页阅读器</Description>
+    <Copyright>仅供个人学习与阅读</Copyright>
+    <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
+    <!-- Do not ship XML doc comments / PDBs of referenced packages. -->
+    <AllowedReferenceRelatedFileExtensions>none</AllowedReferenceRelatedFileExtensions>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3351.48" />
+    <PackageReference Include="AngleSharp" Version="1.2.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="WebAssets\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <None Include="assets\icon.ico" />
+  </ItemGroup>
+</Project>
