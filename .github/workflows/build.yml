@@ -1,0 +1,135 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 构建只需要读代码；只有发布 job 需要写 Release
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  # 标签构建不要被后续提交互相取消
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+env:
+  DOTNET_VERSION: 9.0.x
+  PROJECT_DIR: app/FanqieReader
+  PUBLISH_DIR: dist/番茄沉浸阅读器
+
+jobs:
+  build:
+    name: build (win-x64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Check web assets syntax
+        shell: pwsh
+        run: node --check app/FanqieReader/WebAssets/app.js
+
+      - name: Restore
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: dotnet restore --nologo
+
+      - name: Build (Release)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: dotnet build -c Release --no-restore --nologo
+
+      - name: Publish (self-contained win-x64)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: >
+          dotnet publish -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=false -p:PublishTrimmed=false
+          -o "${{ github.workspace }}/${{ env.PUBLISH_DIR }}"
+          --no-restore --nologo
+
+      - name: Verify package contents
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:GITHUB_WORKSPACE $env:PUBLISH_DIR
+          $required = @(
+            (Join-Path $dir '番茄沉浸阅读器.exe'),
+            (Join-Path $dir 'FanqieReader.dll'),
+            (Join-Path $dir 'WebAssets/index.html'),
+            (Join-Path $dir 'WebAssets/app.js'),
+            (Join-Path $dir 'WebAssets/styles.css')
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) { throw "missing in package: $path" }
+          }
+
+          $files = Get-ChildItem $dir -Recurse -File
+          $size = [math]::Round((($files | Measure-Object -Sum Length).Sum) / 1MB, 1)
+          Write-Host "package: $($files.Count) files, $size MB"
+          # 自包含的 .NET 桌面运行时本身就是 250+ 个文件，少了说明 publish 没跑完
+          if ($files.Count -lt 200) { throw "package looks incomplete: only $($files.Count) files" }
+
+      - name: Package zip
+        id: package
+        shell: pwsh
+        run: |
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $label = if ("${{ github.ref_type }}" -eq 'tag') { "${{ github.ref_name }}" } else { "main-$sha" }
+
+          $zip = Join-Path $env:GITHUB_WORKSPACE "dist/fanqienovel-immersive-reader-$label-win-x64.zip"
+          Compress-Archive -Path (Join-Path $env:GITHUB_WORKSPACE "$env:PUBLISH_DIR/*") `
+                           -DestinationPath $zip -CompressionLevel Optimal
+
+          $mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
+          Write-Host "zip: $(Split-Path $zip -Leaf) ($mb MB)"
+
+          "zip_path=$zip" >> $env:GITHUB_OUTPUT
+          "zip_name=$(Split-Path $zip -Leaf)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fanqienovel-immersive-reader-win-x64
+          path: ${{ steps.package.outputs.zip_path }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: fanqienovel-immersive-reader-win-x64
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false

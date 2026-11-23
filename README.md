@@ -7,6 +7,7 @@
 ![WebView2](https://img.shields.io/badge/WebView2-Runtime-00A4EF)
 ![UI](https://img.shields.io/badge/UI-HTML%20%2F%20CSS%20%2F%20JS-F7DF1E)
 ![status](https://img.shields.io/badge/状态-可用-brightgreen)
+[![build](https://github.com/ms12138/fanqienovel-immersive-reader/actions/workflows/build.yml/badge.svg)](https://github.com/ms12138/fanqienovel-immersive-reader/actions/workflows/build.yml)
 
 它不是把网页整个塞进窗口，而是提取书名、章节、目录和正文，重新排成安静的阅读版式：米白纸张、克制的珊瑚红、无边框窗口、真透明玻璃，以及一个会自动隐到屏幕边缘的窗口。
 
@@ -77,6 +78,8 @@
 2. 双击 `番茄沉浸阅读器.exe`。
 3. 如果提示缺少 WebView2，请安装 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)（Windows 10/11 通常已自带）。
 
+> 不想自己编译的话，可以直接到 [Releases](https://github.com/ms12138/fanqienovel-immersive-reader/releases) 下载打包好的 `fanqienovel-immersive-reader-*-win-x64.zip`，解压即用。
+
 首次启动显示欢迎页；如果在番茄网页登录过，阅读器会复用本机 WebView2 的 Cookie。
 
 > 便携版没有做商业代码签名，Windows SmartScreen 可能提示"Windows 已保护你的电脑"。确认来源可信后选择"更多信息 → 仍要运行"即可。
@@ -145,6 +148,15 @@ dotnet publish -c Release -r win-x64 --self-contained true `
   -p:PublishSingleFile=false -p:PublishTrimmed=false `
   -o ..\..\dist\番茄沉浸阅读器
 ```
+
+### 自动构建
+
+仓库带了一条 GitHub Actions 工作流（`.github/workflows/build.yml`），在 `windows-latest` 上：
+
+- **每次 push / PR**：`node --check` 校验前端脚本 → `dotnet restore / build` → 自包含 `publish` → 校验产物完整性 → 打包 zip → 上传为构建产物
+- **打 `v*` 标签**：额外创建 GitHub Release 并附上 zip（例如 `git tag v1.0.1 && git push origin v1.0.1`）
+
+想拿最新构建（不需要等发版）：仓库 **Actions → build → 最近一次运行 → Artifacts** 下载 `fanqienovel-immersive-reader-win-x64` 即可，产物保留 14 天。
 
 ## 项目结构
 
