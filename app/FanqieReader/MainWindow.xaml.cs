@@ -196,11 +196,10 @@ public partial class MainWindow : Window
 
     private string? _pendingProfileNotice;
 
-    private WebView2 CreateWebView(string userDataFolder)
+    private WebView2 CreateWebView()
     {
         var view = new WebView2
         {
-            CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = userDataFolder },
             DefaultBackgroundColor = System.Drawing.Color.Transparent
         };
         WebHost.Children.Clear();
@@ -238,41 +237,49 @@ public partial class MainWindow : Window
         }
         catch { }
 
+        // 先用 CoreWebView2Environment 试探配置目录，成功之后才创建控件。
+        // 不能在同一个进程里 dispose 控件再重建——WebView2 会抛 "Cannot access a
+        // disposed object"，这也是"关了另一个实例后仍然打不开"的原因。
+        CoreWebView2Environment? environment = null;
+        string? chosenSuffix = null;
         Exception? lastError = null;
+
         foreach (var (suffix, folder) in attempts)
         {
             DebugLog($"WebView2 profile try: '{folder}'");
-
-            View = CreateWebView(folder);
             try
             {
-                await EnsureCoreAsync();
-                DebugLog($"WebView2 core ready (profile suffix '{suffix}')");
-                if (!string.Equals(suffix, _settings.WebViewProfileSuffix, StringComparison.Ordinal))
-                {
-                    _settings.WebViewProfileSuffix = suffix;
-                    _settingsStore.Save();
-                    if (suffix.Length > 0)
-                    {
-                        _pendingProfileNotice =
-                            "原来的登录配置被其它进程占用或不可写，已切换到新的配置目录，需要重新登录一次。";
-                    }
-                }
+                environment = await CoreWebView2Environment.CreateAsync(null, folder);
+                chosenSuffix = suffix;
                 break;
             }
-            catch (Exception ex) when (IsProfileBusy(ex) || ex is UnauthorizedAccessException or IOException)
+            catch (Exception ex)
             {
                 lastError = ex;
                 DebugLog($"profile '{suffix}' unusable: {ex.Message}");
-                try { View?.Dispose(); } catch { }
             }
         }
 
-        if (View is null || View.CoreWebView2 is null)
+        if (environment is null || chosenSuffix is null)
         {
             throw lastError ?? new FanqieException("无法初始化内嵌浏览器。");
         }
 
+        DebugLog($"WebView2 environment ready (profile suffix '{chosenSuffix}')");
+        if (!string.Equals(chosenSuffix, _settings.WebViewProfileSuffix, StringComparison.Ordinal))
+        {
+            _settings.WebViewProfileSuffix = chosenSuffix;
+            _settingsStore.Save();
+            if (chosenSuffix.Length > 0)
+            {
+                _pendingProfileNotice =
+                    "原来的登录配置被其它进程占用或不可写，已切换到新的配置目录，需要重新登录一次。";
+            }
+        }
+
+        View = CreateWebView();
+        await EnsureCoreAsync(environment);
+        DebugLog("WebView2 core ready");
         var core = View.CoreWebView2;
         View.DefaultBackgroundColor = System.Drawing.Color.Transparent;
 
@@ -332,14 +339,14 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task EnsureCoreAsync()
+    private async Task EnsureCoreAsync(CoreWebView2Environment environment)
     {
         // 上一次异常退出可能还占着配置目录几秒，重试一次比直接报错友好。
         for (var attempt = 1; ; attempt++)
         {
             try
             {
-                var initTask = View.EnsureCoreWebView2Async();
+                var initTask = View.EnsureCoreWebView2Async(environment);
                 if (await Task.WhenAny(initTask, Task.Delay(TimeSpan.FromSeconds(20))) != initTask)
                 {
                     throw new TimeoutException("WebView2 初始化超时。请确认 WebView2 Runtime 正常。");
@@ -356,9 +363,27 @@ public partial class MainWindow : Window
     }
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
-        if (!e.Uri.StartsWith("https://fanqie.reader/", StringComparison.OrdinalIgnoreCase))
+        if (e.Uri.StartsWith("https://fanqie.reader/", StringComparison.OrdinalIgnoreCase)) return;
+
+        // 页面里点到外部链接（例如欢迎页的 GitHub 仓库）：交给系统默认浏览器，
+        // 阅读器自己绝不加载外部页面。
+        e.Cancel = true;
+        if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
         {
-            e.Cancel = true;
+            OpenInSystemBrowser(uri.AbsoluteUri);
+        }
+    }
+
+    private static void OpenInSystemBrowser(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            DebugLog("open external link failed: " + ex.Message);
         }
     }
 

@@ -632,6 +632,20 @@ kbd {
 }
 .welcome-footer-line { flex: 1; height: 1px; background: var(--line); }
 
+/* 欢迎页底部的 GitHub 指引 */
+.welcome-repo {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--faint);
+  text-decoration: none;
+  letter-spacing: 0.12em;
+  transition: color 160ms var(--ease-out), opacity 160ms var(--ease-out);
+}
+.welcome-repo svg { width: 11px; height: 11px; }
+.welcome-repo:hover,
+.welcome-repo:focus-visible { color: var(--accent); opacity: 1; }
+
 /* ============================================================
    shelf
    ============================================================ */

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FanqieReader.Models;
 
 namespace FanqieReader.Services;
@@ -155,17 +156,57 @@ public sealed partial class FanqieClient
         }
     }
 
-    private static object Sample(string raw, int max = 1800)
+    /// <summary>取样时只保留数组前两项，避免 248 本书撑爆日志。</summary>
+    private static object Sample(string raw, int maxItems = 2)
     {
-        if (raw.Length > max) raw = raw[..max] + "…";
         try
         {
             using var doc = JsonDocument.Parse(raw);
-            return doc.RootElement.Clone();
+            return Trim(doc.RootElement, maxItems)!;
         }
         catch
         {
-            return raw;
+            return raw.Length > 600 ? raw[..600] + "…" : raw;
+        }
+    }
+
+    private static System.Text.Json.Nodes.JsonNode? Trim(JsonElement element, int maxItems, int depth = 0)
+    {
+        if (depth > 8) return JsonValue.Create("…");
+
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                var obj = new JsonObject();
+                foreach (var property in element.EnumerateObject())
+                {
+                    obj[property.Name] = Trim(property.Value, maxItems, depth + 1);
+                }
+                return obj;
+
+            case JsonValueKind.Array:
+                var array = new JsonArray();
+                foreach (var item in element.EnumerateArray().Take(maxItems))
+                {
+                    array.Add(Trim(item, maxItems, depth + 1));
+                }
+                return array;
+
+            case JsonValueKind.String:
+                var text = element.GetString() ?? "";
+                return JsonValue.Create(text.Length > 160 ? text[..160] + "…" : text);
+
+            case JsonValueKind.Number:
+                return element.TryGetInt64(out var number)
+                    ? JsonValue.Create(number)
+                    : JsonValue.Create(element.GetDouble());
+
+            case JsonValueKind.True:
+                return JsonValue.Create(true);
+            case JsonValueKind.False:
+                return JsonValue.Create(false);
+            default:
+                return null;
         }
     }
 
@@ -307,7 +348,10 @@ public sealed partial class FanqieClient
                 {
                     CollectBooks(doc.RootElement, result);
                     LogTrace($"multidetail ok, books={result.Count} numbers={asNumbers}");
-                    if (result.Count > 0) return result;
+                    diag.Add(new { endpoint = "multidetail-ok", code, numbers = asNumbers, books = result.Count, data = Sample(doc.RootElement.GetRawText()) });
+                    // multidetail 只给书架自己的字段（书名/章数/进度），作者要靠 simple/info，
+                    // 所以这里不提前返回，缺作者就继续问下一个接口。
+                    if (!NeedsAuthor(result)) return result;
                 }
                 else
                 {
@@ -340,8 +384,8 @@ public sealed partial class FanqieClient
                 {
                     CollectBooks(doc.RootElement, result);
                     LogTrace($"simple/info ok, books={result.Count} numbers={asNumbers}");
-                    if (result.Count == 0) diag.Add(new { endpoint = "simple/info-empty", code, numbers = asNumbers, data = Sample(doc.RootElement.GetRawText()) });
-                    if (result.Count > 0) return result;
+                    diag.Add(new { endpoint = "simple/info-ok", code, numbers = asNumbers, books = result.Count, data = Sample(doc.RootElement.GetRawText()) });
+                    if (!NeedsAuthor(result)) return result;
                 }
                 else
                 {
@@ -357,6 +401,10 @@ public sealed partial class FanqieClient
 
         return result;
     }
+
+    /// <summary>有书缺作者时才继续问别的接口，避免重复请求。</summary>
+    private static bool NeedsAuthor(Dictionary<string, ShelfEntry> entries) =>
+        entries.Count > 0 && entries.Values.Any(e => e.Author.Length == 0);
 
     private static object ToNumberOrString(string id) =>
         long.TryParse(id, out var number) ? number : id;
